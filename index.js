@@ -31,6 +31,47 @@ async function run() {
     const db = client.db("shDeco");
     const servicesCollection = db.collection("services");
     const usersCollection = db.collection("users");
+    const bookingsCollection = db.collection("bookings");
+
+    //===================BOOKINGS ALL API'S ===================
+    app.post("/bookings", async (req, res) => {
+      const booking = req.body;
+      if (
+        !booking.userEmail ||
+        !booking.serviceId ||
+        !booking.bookingDate ||
+        !booking.serviceLocation
+      ) {
+        return res.send({ message: "missing require fields" });
+      }
+      const newBooking = {
+        userName: booking.userName,
+        userEmail: booking.userEmail,
+
+        serviceId: booking.serviceId,
+        serviceTitle: booking.serviceTitle,
+        serviceCategory: booking.serviceCategory,
+        servicePrice: booking.servicePrice,
+
+        bookingDate: booking.bookingDate,
+        serviceLocation: booking.serviceLocation,
+        serviceMode: booking.serviceMode,
+        note: booking.note || "",
+
+        status: "pending",
+        paymentStatus: "unpaid",
+        createdAt: new Date(),
+      };
+      const result = await bookingsCollection.insertOne(newBooking);
+      res.send(result);
+    });
+
+    app.get("/bookings", async (req, res) => {
+      const email = req.query.email;
+      const query = { email: email };
+      const result = await bookingsCollection.find(query).toArray();
+      res.send(result);
+    });
 
     //===================USER ALL API'S ===================
 
