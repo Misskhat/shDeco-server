@@ -37,7 +37,7 @@ async function run() {
     app.post("/bookings", async (req, res) => {
       const booking = req.body;
       if (
-        !booking.userEmail ||
+        !booking.email ||
         !booking.serviceId ||
         !booking.bookingDate ||
         !booking.serviceLocation
@@ -46,7 +46,7 @@ async function run() {
       }
       const newBooking = {
         userName: booking.userName,
-        userEmail: booking.userEmail,
+        email: booking.email,
 
         serviceId: booking.serviceId,
         serviceTitle: booking.serviceTitle,
@@ -67,12 +67,27 @@ async function run() {
     });
 
     app.get("/bookings", async (req, res) => {
-      const email = req.query.userEmail;
-      const query = { userEmail: email };
+      const email = req.query.email;
+      const query = { email: email };
       const result = await bookingsCollection.find(query).toArray();
       res.send(result);
     });
 
+    app.get("/admin/bookings", async (req, res) => {
+      const result = await bookingsCollection.find().toArray();
+      res.send(result);
+    });
+
+    app.patch("/admin/bookings/:id", async (req, res) => {
+      const id = req.params.id;
+      const { status } = req.body;
+      const query = { _id: new ObjectId(id) };
+      const update = {
+        $set: { status },
+      };
+      const result = await bookingsCollection.updateOne(query, update);
+      res.send(result);
+    });
     //===================USER ALL API'S ===================
 
     app.post("/users", async (req, res) => {
