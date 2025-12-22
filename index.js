@@ -1,6 +1,7 @@
 const express = require("express");
 const app = express();
 const cors = require("cors");
+const Stripe = require("stripe");
 require("dotenv").config();
 const port = process.env.PORT || 3000;
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
@@ -9,6 +10,7 @@ const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASSWORD}@clu
 // middleware
 app.use(cors());
 app.use(express.json());
+const stripe = Stripe(process.env.STRIPE_SECRET_KEY);
 
 app.get("/", (req, res) => {
   res.send("shDeco server is running");
@@ -32,6 +34,48 @@ async function run() {
     const servicesCollection = db.collection("services");
     const usersCollection = db.collection("users");
     const bookingsCollection = db.collection("bookings");
+    const paymentsCollection = db.collection("payments");
+
+    //===================PAYMENTS ALL API'S ===================
+
+    app.post("/create-payment-intent", async (req, res) => {
+      const { amount } = req.body; // amount in BDT
+      if (!amount) return res.status(400).send({ error: "Amount required" });
+
+      try {
+        const paymentIntent = await stripe.paymentIntents.create({
+          amount: amount * 100, // convert to smallest currency unit (BDT → paisa)
+          currency: "bdt",
+          payment_method_types: ["card"],
+        });
+        res.send({ clientSecret: paymentIntent.client_secret });
+      } catch (error) {
+        console.log(error);
+        res.status(500).send({ error: "Stripe Payment Intent failed" });
+      }
+    });
+
+    app.post("/payments", async (req, res) => {
+      const payment = req.body; // payment info from frontend
+      const { bookingId, amount, paymentIntentId, status } = payment;
+
+      // Save payment
+      const result = await paymentsCollection.insertOne({
+        bookingId,
+        amount,
+        paymentIntentId,
+        status,
+        createdAt: new Date(),
+      });
+
+      // Update booking payment status
+      await bookingsCollection.updateOne(
+        { _id: new ObjectId(bookingId) },
+        { $set: { paymentStatus: status } }
+      );
+
+      res.send(result);
+    });
 
     //===================BOOKINGS ALL API'S ===================
     app.post("/bookings", async (req, res) => {
@@ -63,7 +107,7 @@ async function run() {
         createdAt: new Date(),
       };
       const result = await bookingsCollection.insertOne(newBooking);
-      res.send(result);
+      res.send({ ...newBooking, _id: result.insertedId });
     });
 
     app.get("/bookings", async (req, res) => {
