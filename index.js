@@ -38,22 +38,89 @@ async function run() {
 
     //===================PAYMENTS ALL API'S ===================
 
-    app.post("/create-payment-intent", async (req, res) => {
-      const { amount } = req.body; // amount in BDT
-      if (!amount) return res.status(400).send({ error: "Amount required" });
+    // Create Stripe Checkout session
+    app.post("/create-checkout-session", async (req, res) => {
+      const { bookingId, serviceTitle, amount, userEmail } = req.body;
+
+      if (!bookingId || !amount || !userEmail)
+        return res.status(400).send({ error: "Missing fields" });
 
       try {
-        const paymentIntent = await stripe.paymentIntents.create({
-          amount: amount * 100, // convert to smallest currency unit (BDT → paisa)
-          currency: "bdt",
+        const session = await stripe.checkout.sessions.create({
           payment_method_types: ["card"],
+          line_items: [
+            {
+              price_data: {
+                currency: "bdt",
+                product_data: {
+                  name: serviceTitle,
+                },
+                unit_amount: amount * 100, // BDT → paisa
+              },
+              quantity: 1,
+            },
+          ],
+          mode: "payment",
+          success_url: `${process.env.CLIENT_URL}/dashboard/payments?success=true&bookingId=${bookingId}`,
+          cancel_url: `${process.env.CLIENT_URL}/dashboard/payments?canceled=true`,
+          metadata: { bookingId, userEmail },
         });
-        res.send({ clientSecret: paymentIntent.client_secret });
-      } catch (error) {
-        console.log(error);
-        res.status(500).send({ error: "Stripe Payment Intent failed" });
+
+        res.send({ sessionId: session.id });
+      } catch (err) {
+        console.log(err);
+        res.status(500).send({ error: "Stripe checkout session failed" });
       }
     });
+
+    app.post(
+      "/webhook",
+      express.raw({ type: "application/json" }),
+      async (req, res) => {
+        const sig = req.headers["stripe-signature"];
+        let event;
+
+        try {
+          event = stripe.webhooks.constructEvent(
+            req.body,
+            sig,
+            process.env.STRIPE_WEBHOOK_SECRET
+          );
+        } catch (err) {
+          console.log("Webhook signature verification failed:", err.message);
+          return res.status(400).send(`Webhook Error: ${err.message}`);
+        }
+
+        // Handle successful payment
+        if (event.type === "checkout.session.completed") {
+          const session = event.data.object;
+          const { bookingId, userEmail } = session.metadata;
+
+          // Generate tracking id
+          const trackingId =
+            "TRK-" + Math.random().toString(36).substring(2, 10).toUpperCase();
+
+          // Save payment info
+          await paymentsCollection.insertOne({
+            bookingId,
+            userEmail,
+            paymentIntentId: session.payment_intent,
+            amount: session.amount_total / 100,
+            trackingId,
+            status: "paid",
+            createdAt: new Date(),
+          });
+
+          // Update booking
+          await bookingsCollection.updateOne(
+            { _id: new ObjectId(bookingId) },
+            { $set: { paymentStatus: "paid" } }
+          );
+        }
+
+        res.json({ received: true });
+      }
+    );
 
     app.post("/payments", async (req, res) => {
       const payment = req.body; // payment info from frontend
