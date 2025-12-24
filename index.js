@@ -29,7 +29,7 @@ app.get("/", (req, res) => {
 
 async function run() {
   try {
-    await client.connect();
+    // await client.connect();
     const db = client.db("shDeco");
 
     const servicesCollection = db.collection("services");
@@ -222,10 +222,6 @@ async function run() {
     });
 
     //=================== SERVICES API ===================
-    app.get("/services", async (req, res) => {
-      const services = await servicesCollection.find().toArray();
-      res.send(services);
-    });
 
     app.get("/services/featured", async (req, res) => {
       const services = await servicesCollection.find().limit(6).toArray();
@@ -240,7 +236,12 @@ async function run() {
       res.send(service);
     });
 
-    await client.db("admin").command({ ping: 1 });
+    app.get("/services", async (req, res) => {
+      const services = await servicesCollection.find().toArray();
+      res.send(services);
+    });
+
+    // await client.db("admin").command({ ping: 1 });
     console.log("Successfully connected to MongoDB!");
   } finally {
     // Do not close client to keep server running
